@@ -176,10 +176,12 @@ def enviar_alerta():
         })
 
     except Exception as e:
+        print(f"🔥🔥🔥 ERROR AL ENVIAR CORREO: {str(e)} 🔥🔥🔥")
         return jsonify({
             "success": False,
             "error": str(e)
         }), 500
+
 
 
 if __name__ == "__main__":
