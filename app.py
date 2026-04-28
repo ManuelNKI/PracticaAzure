@@ -1,7 +1,8 @@
 import os
+import smtplib  # <-- ¡ESTA ES LA LÍNEA QUE FALTABA!
+from email.message import EmailMessage
 from flask import Flask, jsonify, request
 from mssql_python import connect
-from email.message import EmailMessage
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -124,6 +125,7 @@ def listar_productos():
         if conn:
             conn.close()
 
+
 def enviar_correo_alerta(asunto, mensaje, destino):
     # 1. Consumir las variables de entorno de Render
     remitente = os.getenv("EMAIL_USER")
@@ -146,9 +148,10 @@ def enviar_correo_alerta(asunto, mensaje, destino):
 
     # 4. Conectar, autenticar y enviar
     with smtplib.SMTP(smtp_host, smtp_port) as server:
-        server.starttls() # Iniciar conexión segura
+        server.starttls()  # Iniciar conexión segura
         server.login(remitente, password)
         server.send_message(msg)
+
 
 @app.route("/enviar-alerta", methods=["POST"])
 def enviar_alerta():
