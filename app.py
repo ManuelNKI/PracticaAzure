@@ -155,6 +155,9 @@ def enviar_correo_alerta(asunto, mensaje, destino):
 
 @app.route("/enviar-alerta", methods=["POST"])
 def enviar_alerta():
+    # 1. Este print nos dirá si la petición siquiera llega a entrar aquí
+    print("🚀 Petición POST recibida en /enviar-alerta", flush=True) 
+
     try:
         data = request.get_json()
         destino = data.get("to")
@@ -162,26 +165,28 @@ def enviar_alerta():
         mensaje = data.get("message")
 
         if not destino or not asunto or not mensaje:
+            print("⚠️ Error: Faltan datos en el JSON", flush=True)
             return jsonify({
                 "success": False,
                 "message": "Faltan datos"
             }), 400
 
-        # Llama a la función que acabamos de crear
+        print(f"📧 Intentando enviar correo a: {destino}...", flush=True)
         enviar_correo_alerta(asunto, mensaje, destino)
         
+        print("✅ Correo enviado con éxito", flush=True)
         return jsonify({
             "success": True,
             "message": "Correo enviado exitosamente"
         })
 
     except Exception as e:
-        print(f"🔥🔥🔥 ERROR AL ENVIAR CORREO: {str(e)} 🔥🔥🔥")
+        # 2. El flush=True obliga a Render a mostrar este error inmediatamente
+        print(f"🔥🔥🔥 ERROR FATAL: {str(e)} 🔥🔥🔥", flush=True) 
         return jsonify({
             "success": False,
             "error": str(e)
         }), 500
-
 
 
 if __name__ == "__main__":
