@@ -1,9 +1,11 @@
 import os
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from mssql_python import connect
+from email.message import EmailMessage
+from flask_cors import CORS
 
 app = Flask(__name__)
-
+CORS(app)
 
 def get_connection():
     server = os.getenv("DB_SERVER")
@@ -122,6 +124,32 @@ def listar_productos():
         if conn:
             conn.close()
 
+def enviar_correo_alerta(asunto, mensaje, destino):
+    # 1. Consumir las variables de entorno de Render
+    remitente = os.getenv("EMAIL_USER")
+    password = os.getenv("EMAIL_PASSWORD")
+
+    if not remitente or not password:
+        raise ValueError("Las credenciales de correo (EMAIL_USER o EMAIL_PASSWORD) no están configuradas en Render.")
+
+    # 2. Construir la estructura del correo
+    msg = EmailMessage()
+    msg.set_content(mensaje)
+    msg["Subject"] = asunto
+    msg["From"] = remitente
+    msg["To"] = destino
+
+    # 3. Configurar el servidor SMTP (Ejemplo para Gmail)
+    # Si usas Outlook/Hotmail, cambia el host a "smtp.office365.com"
+    smtp_host = "smtp.gmail.com"
+    smtp_port = 587
+
+    # 4. Conectar, autenticar y enviar
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        server.starttls() # Iniciar conexión segura
+        server.login(remitente, password)
+        server.send_message(msg)
+
 @app.route("/enviar-alerta", methods=["POST"])
 def enviar_alerta():
     try:
@@ -136,11 +164,12 @@ def enviar_alerta():
                 "message": "Faltan datos"
             }), 400
 
+        # Llama a la función que acabamos de crear
         enviar_correo_alerta(asunto, mensaje, destino)
         
         return jsonify({
             "success": True,
-            "message": "Correo enviado"
+            "message": "Correo enviado exitosamente"
         })
 
     except Exception as e:
@@ -148,7 +177,6 @@ def enviar_alerta():
             "success": False,
             "error": str(e)
         }), 500
-
 
 
 if __name__ == "__main__":
