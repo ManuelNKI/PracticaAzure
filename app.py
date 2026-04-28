@@ -1,9 +1,8 @@
 import os
-import smtplib  # <-- ¡ESTA ES LA LÍNEA QUE FALTABA!
-from email.message import EmailMessage
 from flask import Flask, jsonify, request
 from mssql_python import connect
 from flask_cors import CORS
+import resend
 
 app = Flask(__name__)
 CORS(app)
@@ -15,14 +14,8 @@ def get_connection():
     password = os.getenv("DB_PASSWORD")
     port = os.getenv("DB_PORT", "1433")
 
-    if not server:
-        raise ValueError("Falta DB_SERVER")
-    if not database:
-        raise ValueError("Falta DB_DATABASE")
-    if not username:
-        raise ValueError("Falta DB_USERNAME")
-    if not password:
-        raise ValueError("Falta DB_PASSWORD")
+    if not server or not database or not username or not password:
+        raise ValueError("Faltan credenciales de la base de datos en las variables de entorno.")
 
     connection_string = (
         f"Server=tcp:{server},{port};"
@@ -53,6 +46,7 @@ def debug_env():
         "DB_USERNAME": os.getenv("DB_USERNAME"),
         "DB_PASSWORD_EXISTS": bool(os.getenv("DB_PASSWORD")),
         "DB_PORT": os.getenv("DB_PORT"),
+        "RESEND_API_KEY_EXISTS": bool(os.getenv("RESEND_API_KEY"))
     })
 
 
@@ -126,43 +120,15 @@ def listar_productos():
             conn.close()
 
 
-def enviar_correo_alerta(asunto, mensaje, destino):
-    # 1. Consumir las variables de entorno de Render
-    remitente = os.getenv("EMAIL_USER")
-    password = os.getenv("EMAIL_PASSWORD")
-
-    if not remitente or not password:
-        raise ValueError("Las credenciales de correo (EMAIL_USER o EMAIL_PASSWORD) no están configuradas en Render.")
-
-    # 2. Construir la estructura del correo
-    msg = EmailMessage()
-    msg.set_content(mensaje)
-    msg["Subject"] = asunto
-    msg["From"] = remitente
-    msg["To"] = destino
-
-    # 3. Configurar el servidor SMTP (Ejemplo para Gmail)
-    # Si usas Outlook/Hotmail, cambia el host a "smtp.office365.com"
-    smtp_host = "smtp.gmail.com"
-    smtp_port = 587
-
-    # 4. Conectar, autenticar y enviar
-    with smtplib.SMTP(smtp_host, smtp_port) as server:
-        server.starttls()  # Iniciar conexión segura
-        server.login(remitente, password)
-        server.send_message(msg)
-
-
 @app.route("/enviar-alerta", methods=["POST"])
 def enviar_alerta():
-    # 1. Este print nos dirá si la petición siquiera llega a entrar aquí
-    print("🚀 Petición POST recibida en /enviar-alerta", flush=True) 
+    print("🚀 Petición POST recibida en /enviar-alerta (vía Resend)", flush=True) 
 
     try:
         data = request.get_json()
         destino = data.get("to")
-        asunto = data.get("subject")
-        mensaje = data.get("message")
+        asunto = data.get("subject", "Notificación")
+        mensaje = data.get("message", "Mensaje desde Render")
 
         if not destino or not asunto or not mensaje:
             print("⚠️ Error: Faltan datos en el JSON", flush=True)
@@ -171,18 +137,33 @@ def enviar_alerta():
                 "message": "Faltan datos"
             }), 400
 
-        print(f"📧 Intentando enviar correo a: {destino}...", flush=True)
-        enviar_correo_alerta(asunto, mensaje, destino)
+        # Validar variables de entorno de Resend
+        resend_api_key = os.getenv("RESEND_API_KEY")
+        if not resend_api_key:
+            raise ValueError("La variable RESEND_API_KEY no está configurada en Render.")
         
-        print("✅ Correo enviado con éxito", flush=True)
+        resend.api_key = resend_api_key
+        from_email = os.getenv("MAIL_RESEND", "onboarding@resend.dev")
+
+        print(f"📧 Intentando enviar correo a: {destino}...", flush=True)
+        
+        # Ejecutar el envío a través de la API de Resend
+        respuesta = resend.Emails.send({
+            "from": from_email,
+            "to": destino,
+            "subject": asunto,
+            "html": f"<p>{mensaje}</p>"
+        })
+        
+        print(f"✅ Correo enviado con éxito. ID de Resend: {respuesta.get('id')}", flush=True)
+        
         return jsonify({
             "success": True,
             "message": "Correo enviado exitosamente"
         })
 
     except Exception as e:
-        # 2. El flush=True obliga a Render a mostrar este error inmediatamente
-        print(f"🔥🔥🔥 ERROR FATAL: {str(e)} 🔥🔥🔥", flush=True) 
+        print(f"🔥🔥🔥 ERROR FATAL EN RESEND: {str(e)} 🔥🔥🔥", flush=True) 
         return jsonify({
             "success": False,
             "error": str(e)
